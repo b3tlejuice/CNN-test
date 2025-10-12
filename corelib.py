@@ -10,12 +10,15 @@ class Manipulator():
     __device__ = "cpu"
     __model__ = None
     __abc__ = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ" #"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    __transformOnlyCrop__ = transforms.Compose([
+        transforms.Resize((64, 96))
+    ])
     __transform__ = transforms.Compose([
         transforms.RandomRotation(20),
         transforms.RandomAffine(degrees=0, translate=(0.2, 0.2), shear=10, scale=(0.8, 1.2)),
         transforms.ColorJitter(brightness=0.2, contrast=0.2),
         transforms.RandomPerspective(distortion_scale=0.3, p=0.5),
-        transforms.RandomResizedCrop((64,96), scale=(0.8,1.0)),
+        transforms.RandomResizedCrop((64,96), scale=(0.8,1.0))
         #transforms.ToTensor()
     ])
 
@@ -32,14 +35,16 @@ class Manipulator():
     def genData(self, table="", saveFiles=False, debug=False):
         df = pd.read_csv(table)
         N = len(df)
-        img_tensor = torch.empty((N, 1, 64, 96), dtype=torch.float32)
-        ans_tensor = torch.empty((N,), dtype=torch.long)
+        img_tensor = torch.empty((N*2, 1, 64, 96), dtype=torch.float32)
+        ans_tensor = torch.empty((N*2,), dtype=torch.long)
         for i, row in df.iterrows():
             if debug and not (i+1)%(N//20):
                 print(f"{(i+1)*100//N}%")
             img = read_image("res/"+row["filename"], ImageReadMode.GRAY)
-            img_tensor[i] = self.__transform__(img) / 255.0
-            ans_tensor[i] = self.__abc__.index(row["label"].replace("_caps", "").upper())
+            img_tensor[2*i] = self.__transformOnlyCrop__(img) / 255.0
+            img_tensor[2*i+1] = self.__transform__(img) / 255.0
+            ans_tensor[2*i] = self.__abc__.index(row["label"].replace("_caps", "").upper())
+            ans_tensor[2*i+1] = ans_tensor[2*i]
         if saveFiles:
             torch.save(img_tensor, "out/ImgData.pt")
             torch.save(ans_tensor, "out/AnsData.pt")
@@ -106,8 +111,6 @@ class Manipulator():
         if saveFiles:
             torch.save(model.state_dict(), "out/model_weights.pth")
         
-        return
-    
     def uploadModel(self, path):
         self.__model__ = nn.Sequential(
             nn.Conv2d(1, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),
@@ -129,10 +132,8 @@ class Manipulator():
         ans = self.__model__(img_tensor).argmax(1)[0]
         result = self.__abc__[ans]
         return result
-        
-    
-    
-if __name__ == "main":
+
+if __name__ == "__main__":
     dm = Manipulator()
     dm.setDefaultDevice("cuda:0")
     #dm.genData("res/image_labels.csv",True, True)
