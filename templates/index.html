@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Рисовалка</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        }
+        
+        .canvas-container {
+            margin: 20px;
+            border: 2px solid #333;
+        }
+        
+        canvas {
+            cursor: crosshair;
+            background-color: white;
+        }
+        
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 10px;
+            cursor: pointer;
+        }
+        
+        .controls {
+            margin: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="result" id="result">
+    </div>
+
+    <div class="canvas-container">
+        <canvas id="drawingCanvas" width="960" height="640"></canvas>
+    </div>
+    
+    <div class="controls">
+        <button onclick="clearCanvas()">Очистить</button>
+        <button onclick="saveImage()">Сохранить</button>
+        <button onclick="evalImage()">Оценить</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getBoundingClientRect();
+        const SCALE_FACTOR = 10;
+        const ORIGINAL_WIDTH = 96;
+        const ORIGINAL_HEIGHT = 64;
+        const BRUSH_SIZE = 3;
+        
+        let isDrawing = false;
+        
+        const virtualCanvas = document.createElement('canvas');
+        virtualCanvas.width = ORIGINAL_WIDTH;
+        virtualCanvas.height = ORIGINAL_HEIGHT;
+        const virtualCtx = virtualCanvas.getContext('2d');
+        
+        virtualCtx.fillStyle = 'white';
+        virtualCtx.fillRect(0, 0, ORIGINAL_WIDTH, ORIGINAL_HEIGHT);
+        
+        const mainCtx = canvas.getContext('2d');
+        mainCtx.fillStyle = 'white';
+        mainCtx.fillRect(0, 0, canvas.width, canvas.height);
+        mainCtx.strokeStyle = 'black';
+        mainCtx.lineWidth = 1;
+        mainCtx.lineCap = 'round';
+        mainCtx.imageSmoothingEnabled = false;
+        
+        function updateDisplay() {
+            mainCtx.clearRect(0, 0, canvas.width, canvas.height);
+            mainCtx.drawImage(
+                virtualCanvas, 
+                0, 0, ORIGINAL_WIDTH, ORIGINAL_HEIGHT,
+                0, 0, canvas.width, canvas.height
+            );
+        }
+        
+        function drawBrush(x, y) {
+            const halfSize = Math.floor(BRUSH_SIZE / 2);
+            
+            virtualCtx.fillStyle = 'black';
+            for (let dx = -halfSize; dx <= halfSize; dx++) {
+                for (let dy = -halfSize; dy <= halfSize; dy++) {
+                    const pixelX = x + dx;
+                    const pixelY = y + dy;
+                    
+                    if (pixelX >= 0 && pixelX < ORIGINAL_WIDTH && 
+                        pixelY >= 0 && pixelY < ORIGINAL_HEIGHT) {
+                        virtualCtx.fillRect(pixelX, pixelY, 1, 1);
+                    }
+                }
+            }
+        }
+
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+        
+        canvas.addEventListener('touchstart', handleTouch);
+        canvas.addEventListener('touchmove', handleTouch);
+        canvas.addEventListener('touchend', stopDrawing);
+        
+        function startDrawing(e) {
+            isDrawing = true;
+            draw(e);
+        }
+        
+        function draw(e) {
+            if (!isDrawing) return;
+            
+            e.preventDefault();
+            
+            const rect = canvas.getBoundingClientRect();
+            let x, y;
+            
+            if (e.type.includes('touch')) {
+                x = e.touches[0].clientX - rect.left;
+                y = e.touches[0].clientY - rect.top;
+            } else {
+                x = e.clientX - rect.left;
+                y = e.clientY - rect.top;
+            }
+            
+            const scaledX = Math.floor(x / SCALE_FACTOR);
+            const scaledY = Math.floor(y / SCALE_FACTOR);
+            
+            if (scaledX >= 0 && scaledX < ORIGINAL_WIDTH && scaledY >= 0 && scaledY < ORIGINAL_HEIGHT) {
+                drawBrush(scaledX, scaledY);
+                updateDisplay();
+            }
+        }
+        
+        function handleTouch(e) {
+            e.preventDefault();
+            if (e.type === 'touchstart') {
+                startDrawing(e);
+            } else if (e.type === 'touchmove') {
+                draw(e);
+            }
+        }
+        
+        function stopDrawing() {
+            isDrawing = false;
+        }
+        
+        function clearCanvas() {
+            virtualCtx.fillStyle = 'white';
+            virtualCtx.fillRect(0, 0, ORIGINAL_WIDTH, ORIGINAL_HEIGHT);
+            
+            updateDisplay();
+        }
+        
+        function saveImage() {
+            const imageData = virtualCanvas.toDataURL('image/png');
+            
+            fetch('/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ image: imageData })
+            })
+        }
+
+        function evalImage(){
+            const imageData = virtualCanvas.toDataURL('image/png');
+
+            fetch('/eval', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ image: imageData })
+            })
+            .then(response => response.json())
+            .then(data => {
+                let resultElement = document.getElementById('result');
+                resultElement.textContent = "Вы написали: " + data.character;
+            });
+        }
+        
+        updateDisplay();
+    </script>
+</body>
+</html>
